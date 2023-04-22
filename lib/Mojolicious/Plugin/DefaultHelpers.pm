@@ -53,11 +53,11 @@ sub register {
   $app->helper('reply.not_found',      => sub { shift->helpers->reply->http_not_found() });
   $app->helper('reply.http_exception', => \&_http_exception);
   $app->helper('reply.http_not_found', => \&_http_not_found);
-  $app->helper('reply.html_exception'  => sub { _development('exception', @_) });
-  $app->helper('reply.html_not_found'  => sub { _development('not_found', @_) });
-  $app->helper('reply.json_exception', => \&_json_exception);
+  $app->helper('reply.html_exception'  => sub { _development(\&_html_exception, @_) });
+  $app->helper('reply.html_not_found'  => \&_html_not_found);
+  $app->helper('reply.json_exception', => sub { _development(\&_json_exception, @_) });
   $app->helper('reply.json_not_found', => \&_json_not_found);
-  $app->helper('reply.txt_exception',  => \&_txt_exception);
+  $app->helper('reply.txt_exception',  => sub { _development(\&_txt_exception), @_ });
   $app->helper('reply.txt_not_found',  => \&_txt_not_found);
 
   $app->helper('timing.begin'         => \&_timing_begin);
@@ -98,28 +98,16 @@ sub _current_route {
 }
 
 sub _development {
-  my ($page, $c, $e) = @_;
+  my ($func, $c, $e) = @_;
 
-  $c->helpers->log->error(($e = _is_e($e) ? $e : Mojo::Exception->new($e))->inspect) if $page eq 'exception';
+  $c->helpers->log->error(($e = _is_e($e) ? $e : Mojo::Exception->new($e))->inspect);
 
   # Filtered stash snapshot
   my $stash = $c->stash;
   %{$stash->{snapshot} = {}}
     = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
-  $stash->{exception} = $page eq 'exception' ? $e : undef;
-
-  # Render with fallbacks
-  my $app     = $c->app;
-  my $mode    = $app->mode;
-  my $options = {
-    format   => $stash->{format} || $app->renderer->default_format,
-    handler  => undef,
-    status   => $page eq 'exception' ? 500 : 404,
-    template => "$page.$mode"
-  };
-  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $page);
-  return $c if _fallbacks($c, $options, $page, $bundled);
-  _fallbacks($c, {%$options, format => 'html'}, $page, $bundled);
+  $stash->{exception} = $e;
+  $func->($c, $e);
   return $c;
 }
 
@@ -138,12 +126,15 @@ sub _fallbacks {
   # Mode specific template
   return 1 if $c->render_maybe(%$options);
 
+  print "FOO \n";
+
   # Normal template
   return 1 if $c->render_maybe(%$options, template => $template);
 
+  print "FOO BAR \n";
+
   # Inline template
   my $stash = $c->stash;
-  return undef unless $options->{format} eq 'html';
   delete @$stash{qw(extends layout)};
   return $c->render_maybe($bundled, %$options, handler => 'ep');
 }
@@ -178,6 +169,46 @@ sub _http_not_found {
   return $c->helpers->reply->txt_not_found  if $format eq 'txt';
   return $c->helpers->reply->json_not_found if $format eq 'json';
   return $c->helpers->reply->html_not_found;
+}
+
+sub _html_exception {
+  my ($c, $e) = @_;
+
+  my $stash = $c->stash;
+  my $page  = 'exception';
+
+  my $app     = $c->app;
+  my $mode    = $app->mode;
+  my $options = {
+    format   => $stash->{format} || $app->renderer->default_format,
+    handler  => undef,
+    status   => 500,
+    template => "$page.$mode"
+  };
+  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $page);
+  return $c if _fallbacks($c, $options, $page, $bundled);
+  _fallbacks($c, {%$options, format => 'html'}, $page, $bundled);
+  return $c;
+}
+
+sub _html_not_found {
+  my ($c, $e) = @_;
+
+  my $stash = $c->stash;
+  my $page  = 'not_found';
+
+  my $app     = $c->app;
+  my $mode    = $app->mode;
+  my $options = {
+    format   => $stash->{format} || $app->renderer->default_format,
+    handler  => undef,
+    status   => 404,
+    template => "$page.$mode"
+  };
+  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $page);
+  return $c if _fallbacks($c, $options, $page, $bundled);
+  _fallbacks($c, {%$options, format => 'html'}, $page, $bundled);
+  return $c;
 }
 
 sub _inactivity_timeout {
