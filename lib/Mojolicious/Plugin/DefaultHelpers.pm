@@ -57,7 +57,7 @@ sub register {
   $app->helper('reply.html_not_found'  => \&_html_not_found);
   $app->helper('reply.json_exception', => sub { _development(\&_json_exception, @_) });
   $app->helper('reply.json_not_found', => \&_json_not_found);
-  $app->helper('reply.txt_exception',  => sub { _development(\&_txt_exception), @_ });
+  $app->helper('reply.txt_exception',  => sub { _development(\&_txt_exception, @_) });
   $app->helper('reply.txt_not_found',  => \&_txt_not_found);
 
   $app->helper('timing.begin'         => \&_timing_begin);
@@ -107,8 +107,9 @@ sub _development {
   %{$stash->{snapshot} = {}}
     = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
   $stash->{exception} = $e;
-  $func->($c, $e);
-  return $c;
+  my $rc = $func->($c, $e);
+  delete $rc->stash->{snapshot}->{exception};
+  return $rc;
 }
 
 sub _exception_format {
@@ -126,12 +127,8 @@ sub _fallbacks {
   # Mode specific template
   return 1 if $c->render_maybe(%$options);
 
-  print "FOO \n";
-
   # Normal template
   return 1 if $c->render_maybe(%$options, template => $template);
-
-  print "FOO BAR \n";
 
   # Inline template
   my $stash = $c->stash;
@@ -177,6 +174,9 @@ sub _html_exception {
   my $stash = $c->stash;
   my $page  = 'exception';
 
+  %{$stash->{snapshot} = {}}
+    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
+
   my $app     = $c->app;
   my $mode    = $app->mode;
   my $options = {
@@ -196,6 +196,9 @@ sub _html_not_found {
 
   my $stash = $c->stash;
   my $page  = 'not_found';
+
+  %{$stash->{snapshot} = {}}
+    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
 
   my $app     = $c->app;
   my $mode    = $app->mode;
@@ -227,11 +230,20 @@ sub _is_fresh {
 
 sub _json_exception {
   my ($c, $e) = @_;
-  return $c->render(json => {error => $e},                      status => 500) if $c->app->mode eq 'development';
-  return $c->render(json => {error => 'Internal Server Error'}, status => 500);
+  if ($c->app->mode eq 'development') {
+    $c->render(json => {error => $e}, status => 500);
+  }
+  else {
+    $c->render(json => {error => 'Internal Server Error'}, status => 500);
+  }
+  return $c;
 }
 
-sub _json_not_found { shift->render(json => {error => 'Not Found'}, status => 404) }
+sub _json_not_found {
+  my $c = shift;
+  $c->render(json => {error => 'Not Found'}, status => 404);
+  return $c;
+}
 
 sub _log { $_[0]->stash->{'mojo.log'} ||= $_[0]->app->log->context('[' . $_[0]->req->request_id . ']') }
 
@@ -346,11 +358,20 @@ sub _tx_error { (shift->error // {})->{message} // 'Unknown error' }
 
 sub _txt_exception {
   my ($c, $e) = @_;
-  return $c->render(text => $e,                      format => 'txt', status => 500) if $c->app->mode eq 'development';
-  return $c->render(text => 'Internal Server Error', format => 'txt', status => 500);
+  if ($c->app->mode eq 'development') {
+    $c->render(text => $e, format => 'txt', status => 500);
+  }
+  else {
+    $c->render(text => 'Internal Server Error', format => 'txt', status => 500);
+  }
+  return $c;
 }
 
-sub _txt_not_found { shift->render(text => 'Not Found', format => 'txt', status => 404) }
+sub _txt_not_found {
+  my $c = shift;
+  $c->render(text => 'Not Found', format => 'txt', status => 404);
+  return $c;
+}
 
 sub _url_with {
   my $c = shift;
