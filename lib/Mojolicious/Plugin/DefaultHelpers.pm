@@ -98,17 +98,15 @@ sub _current_route {
 }
 
 sub _development {
-  my ($func, $c, $e) = @_;
+  my ($func, $c, $ex) = @_;
+  my $e = _is_e($ex) ? $ex : Mojo::Exception->new($ex);
 
-  $c->helpers->log->error(($e = _is_e($e) ? $e : Mojo::Exception->new($e))->inspect);
+  $c->helpers->log->error($e->inspect);
 
-  # Filtered stash snapshot
-  my $stash = $c->stash;
-  %{$stash->{snapshot} = {}}
-    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
+  my $stash  = $c->stash;
+  my $format = $stash->{format} || $c->app->renderer->default_format;
+  my $rc     = $func->($c, $e);
   $stash->{exception} = $e;
-  my $rc = $func->($c, $e);
-  delete $rc->stash->{snapshot}->{exception};
   return $rc;
 }
 
@@ -168,50 +166,39 @@ sub _http_not_found {
   return $c->helpers->reply->html_not_found;
 }
 
-sub _html_exception {
-  my ($c, $e) = @_;
-
+sub _html_exception_base {
+  my $c     = shift;
+  my $e     = shift;
+  my $s     = shift;
+  my $p     = shift;
   my $stash = $c->stash;
-  my $page  = 'exception';
-
-  %{$stash->{snapshot} = {}}
-    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
 
   my $app     = $c->app;
   my $mode    = $app->mode;
   my $options = {
     format   => $stash->{format} || $app->renderer->default_format,
     handler  => undef,
-    status   => 500,
-    template => "$page.$mode"
+    status   => $s,
+    template => "$p.$mode"
   };
-  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $page);
-  return $c if _fallbacks($c, $options, $page, $bundled);
-  _fallbacks($c, {%$options, format => 'html'}, $page, $bundled);
+
+  $stash->{exception} = $e;
+
+  %{$stash->{snapshot} = {}}
+    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
+
+  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $p);
+  return $c if _fallbacks($c, $options, $p, $bundled);
+  _fallbacks($c, {%$options, format => 'html'}, $p, $bundled);
   return $c;
 }
 
+sub _html_exception {
+  return _html_exception_base(shift, shift, 500, 'exception');
+}
+
 sub _html_not_found {
-  my ($c, $e) = @_;
-
-  my $stash = $c->stash;
-  my $page  = 'not_found';
-
-  %{$stash->{snapshot} = {}}
-    = map { $_ => $_ eq 'app' ? 'DUMMY' : $stash->{$_} } grep { !/^mojo\./ and defined $stash->{$_} } keys %$stash;
-
-  my $app     = $c->app;
-  my $mode    = $app->mode;
-  my $options = {
-    format   => $stash->{format} || $app->renderer->default_format,
-    handler  => undef,
-    status   => 404,
-    template => "$page.$mode"
-  };
-  my $bundled = 'mojo/' . ($mode eq 'development' ? 'debug' : $page);
-  return $c if _fallbacks($c, $options, $page, $bundled);
-  _fallbacks($c, {%$options, format => 'html'}, $page, $bundled);
-  return $c;
+  return _html_exception_base(shift, shift, 404, 'not_found');
 }
 
 sub _inactivity_timeout {
