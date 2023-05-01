@@ -90,6 +90,11 @@ sub _content {
   return Mojo::ByteStream->new($hash->{$name} // '');
 }
 
+sub _convert_to_exception {
+  my $e = shift;
+  return _is_e($e) ? $e : Mojo::Exception->new($e);
+}
+
 sub _csrf_token { $_[0]->session->{csrf_token} ||= hmac_sha1_sum($$ . steady_time . rand, $_[0]->app->secrets->[0]) }
 
 sub _current_route {
@@ -100,7 +105,7 @@ sub _current_route {
 sub _development {
   my ($page, $c, $e) = @_;
 
-  $c->helpers->log->error(($e = _is_e($e) ? $e : Mojo::Exception->new($e))->inspect) if $page eq 'exception';
+  $c->helpers->log->error(($e = _convert_to_exception($e))->inspect) if $page eq 'exception';
 
   # Filtered stash snapshot
   my $stash = $c->stash;
@@ -196,6 +201,7 @@ sub _is_fresh {
 
 sub _json_exception {
   my ($c, $e) = @_;
+  $c->stash->{exception} = _convert_to_exception($e);
   return $c->render(json => {error => $e},                      status => 500) if $c->app->mode eq 'development';
   return $c->render(json => {error => 'Internal Server Error'}, status => 500);
 }
@@ -315,6 +321,7 @@ sub _tx_error { (shift->error // {})->{message} // 'Unknown error' }
 
 sub _txt_exception {
   my ($c, $e) = @_;
+  $c->stash->{exception} = _convert_to_exception($e);
   return $c->render(text => $e,                      format => 'txt', status => 500) if $c->app->mode eq 'development';
   return $c->render(text => 'Internal Server Error', format => 'txt', status => 500);
 }
