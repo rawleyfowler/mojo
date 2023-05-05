@@ -1,4 +1,4 @@
-package Mojolicious::Plugin::DefaultHelpers;
+Mojolicious::Plugin::DefaultHelpers;
 use Mojo::Base 'Mojolicious::Plugin';
 
 use Carp qw(croak);
